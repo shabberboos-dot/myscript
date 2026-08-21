@@ -1,0 +1,739 @@
+// ==UserScript==
+// @name         𝗡𝗫 𝗫𝗛𝗔𝗪𝗢𝗡 – 5 PATTERN SEQUENCE RECOVERY (v16.0)
+// @namespace    http://tampermonkey.net/
+// @version      160.0.0
+// @description  NX XHAWON | 5 Pattern Detection | 3-8 Step Recovery Sequences | Normal Market Follow | Double Martingale | Full Stats
+// @author       𝗡𝗫 𝗫𝗛𝗔𝗪𝗢𝗡
+// @match        *://*/*
+// @grant        none
+// ==/UserScript==
+
+(function(){
+    if(document.getElementById('sys-core-fin')) return;
+    
+    // ==========================================
+    // 1. FIREBASE CONNECT & ADMIN CONTROL
+    // ==========================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyAqW8zmQPiG3tM-dOMnJCZ4YF75qncF9Uk",
+        authDomain: "ff-tournament-c8552.firebaseapp.com",
+        databaseURL: "https://ff-tournament-c8552-default-rtdb.firebaseio.com",
+        projectId: "ff-tournament-c8552",
+        storageBucket: "ff-tournament-c8552.firebasestorage.app",
+        messagingSenderId: "579444442534",
+        appId: "1:579444442534:web:8272e49d342a6e5ca4bb67",
+        measurementId: "G-WPBLWZQ7S1"
+    };
+
+    let db;
+    let userStatus = "pending";
+    let expiresAt = 0;
+    let deviceId = localStorage.getItem('drx_device_id');
+    if (!deviceId) {
+        deviceId = 'DRX-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        localStorage.setItem('drx_device_id', deviceId);
+    }
+    let userIP = "Fetching...";
+    let browserInfo = navigator.userAgent.substring(0, 60);
+
+    function loadFirebase(callback) {
+        if (typeof firebase !== 'undefined') { callback(); return; }
+        let s1 = document.createElement('script');
+        s1.src = "https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js";
+        document.head.appendChild(s1);
+        let s2 = document.createElement('script');
+        s2.src = "https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js";
+        document.head.appendChild(s2);
+        
+        let att = 0;
+        let chk = setInterval(() => {
+            att++;
+            if (typeof firebase !== 'undefined' || att > 50) {
+                clearInterval(chk);
+                if (typeof firebase !== 'undefined') callback();
+            }
+        }, 200);
+    }
+
+    loadFirebase(() => {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+
+        fetch('https://api.ipify.org?format=json')
+            .then(res => res.json())
+            .then(data => { 
+                userIP = data.ip; 
+                db.ref('drx_users/' + deviceId).update({ ip: userIP, browser: browserInfo });
+            }).catch(() => { userIP = "Unknown"; });
+
+        db.ref('drx_users/' + deviceId).on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                userStatus = data.status || "pending";
+                expiresAt = data.expiresAt || 0;
+                
+                if (data.command === 'STOP') {
+                    if(st.isRun) {
+                        st.isRun = false; clearInterval(st.autoInt);
+                        let lkOvl = document.getElementById('drx-lck-bg');
+                        if(lkOvl) lkOvl.style.display = 'none';
+                        document.body.style.overflow = '';
+                        let uSts = document.getElementById('ui-sts');
+                        if(uSts) { uSts.innerText = 'HALTED (ADMIN)'; uSts.className = 'txt-blk-err'; }
+                        alert("ADMIN FORCED STOP YOUR BOT!");
+                    }
+                    db.ref('drx_users/' + deviceId).update({ command: null });
+                }
+                _checkAdminStatus();
+            } else {
+                db.ref('drx_users/' + deviceId).set({
+                    deviceId: deviceId, status: 'pending', expiresAt: 0, regTime: Date.now(), ip: userIP, browser: browserInfo
+                });
+                _checkAdminStatus();
+            }
+        });
+
+        const showLockScreen = (msg) => {
+            let lockDiv = document.getElementById('drx-admin-lock');
+            if (!lockDiv) {
+                lockDiv = document.createElement('div');
+                lockDiv.id = 'drx-admin-lock';
+                lockDiv.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:#050505;color:#a020f0;z-index:99999999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;text-align:center;text-shadow:0 0 20px #a020f0;";
+                document.body.appendChild(lockDiv);
+                document.body.style.overflow = 'hidden';
+            }
+            lockDiv.innerHTML = `
+                <div style="font-size:26px;margin-bottom:15px;font-weight:bold;color:#f00;">${msg}</div>
+                <div style="font-size:16px;color:#fff;text-shadow:none;background:#111;padding:10px 20px;border-radius:5px;border:1px dashed #a020f0;">
+                    YOUR DEVICE ID: <span style="color:#00ffcc;font-weight:bold;">${deviceId}</span>
+                </div>
+                <div style='font-size:12px;color:#666;margin-top:20px;text-shadow:none;'>Contact Admin to Activate or Renew.</div>
+            `;
+        };
+        const removeLockScreen = () => {
+            let lockDiv = document.getElementById('drx-admin-lock');
+            if (lockDiv) { lockDiv.remove(); document.body.style.overflow = ''; }
+        };
+
+        window._checkAdminStatus = () => {
+            if (userStatus === 'blocked') { showLockScreen("ACCESS DENIED: BANNED"); st.isRun = false; clearInterval(st.autoInt); return true; }
+            if (userStatus === 'pending') { showLockScreen("SYSTEM LOCKED: PENDING"); st.isRun = false; clearInterval(st.autoInt); return true; }
+            if (Date.now() > expiresAt) { showLockScreen("SYSTEM EXPIRED: RENEW"); st.isRun = false; clearInterval(st.autoInt); return true; }
+            removeLockScreen(); return false;
+        };
+
+        // ==========================================
+        // 2. CORE SETUP
+        // ==========================================
+        const SETTINGS = {
+            SCAN_SYS: "FAST",
+            VISUAL_FX: "GLITCH",
+            COLOR_FLT: "VIOLET"
+        };
+
+        const uF = (s) => String(s).toUpperCase().split('').map(c => {
+            let n = c.charCodeAt(0);
+            if(n>=65&&n<=90) return String.fromCodePoint(n+119743); 
+            if(n>=48&&n<=57) return String.fromCodePoint(n+120764); 
+            return c;
+        }).join('');
+
+        const PLATFORM_ID = 'dkwin';
+        const d = {"B1":{"x":118,"y":63,"w":123,"h":37.5}}; 
+        const sel = {
+            BIG: "div#app > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(5) > div",
+            SMALL: "div#app > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(5) > div:nth-of-type(2)",
+            A1: "div#app > div:nth-of-type(2) > div:nth-of-type(5) > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > input",
+            DTA: "div#app > div:nth-of-type(2) > div:nth-of-type(5) > div > div:nth-of-type(3) > button:nth-of-type(2)"
+        };
+        
+        const cfg = { 
+            fRt: 300, 
+            syncDly: 2500, 
+            minSf: 10
+        };
+        
+        // ==========================================
+        // 3. 🔥 5 PATTERN SEQUENCES (From Screenshots)
+        // ==========================================
+        const PATTERN_SEQ_MAP = {
+            // প্যাটার্ন ১: SMALL, BIG, SMALL, BIG → 8 Step
+            "SMALL-BIG-SMALL-BIG": ["SMALL", "SMALL", "SMALL", "SMALL", "BIG", "BIG", "SMALL", "BIG"],
+            // প্যাটার্ন ২: BIG, SMALL, BIG, SMALL → 8 Step
+            "BIG-SMALL-BIG-SMALL": ["BIG", "SMALL", "BIG", "BIG", "BIG", "SMALL", "BIG", "SMALL"],
+            // প্যাটার্ন ৩: SMALL, SMALL, BIG, BIG → 3 Step
+            "SMALL-SMALL-BIG-BIG": ["SMALL", "BIG", "BIG"],
+            // প্যাটার্ন ৪: BIG, BIG, SMALL, SMALL → 3 Step
+            "BIG-BIG-SMALL-SMALL": ["BIG", "SMALL", "SMALL"],
+            // প্যাটার্ন ৫: BIG, SMALL, SMALL, BIG → 3 Step
+            "BIG-SMALL-SMALL-BIG": ["BIG", "SMALL", "BIG"]
+        };
+
+        function getMarketPattern(last4) {
+            let p1 = last4[3] >= 5 ? 'BIG' : 'SMALL';
+            let p2 = last4[2] >= 5 ? 'BIG' : 'SMALL';
+            let p3 = last4[1] >= 5 ? 'BIG' : 'SMALL';
+            let p4 = last4[0] >= 5 ? 'BIG' : 'SMALL';
+            let key = p1 + '-' + p2 + '-' + p3 + '-' + p4;
+            return PATTERN_SEQ_MAP[key] || null;
+        }
+
+        // ==========================================
+        // 4. STATE
+        // ==========================================
+        let st = { 
+            isRun: false, 
+            tgtAmt: 500, 
+            curBal: 0, 
+            autoInt: null, 
+            preScn: null, 
+            isTrd: false, 
+            stpIdx: 0, 
+            dynSeq: [], 
+            mode: 'DEF', 
+            extVal: 0,
+            mlActive: false,
+            timeLimit: 'NO',
+            tradesDone: 0,
+            maxTrades: 0,
+            activeAI: '5SEQ RECOVERY',
+            isRecovery: false,
+            lossCount: 0,
+            currentStep: 0,
+            baseAmount: 5,
+            recoverySequence: [],
+            recoverySeqIdx: 0,
+            totalSignals: 0, 
+            totalWins: 0, 
+            totalLosses: 0, 
+            maxLossStreak: 0,
+            maxWinStreak: 0, 
+            currentLossStreak: 0, 
+            currentWinStreak: 0,
+            lastPred: null, 
+            lastPeriod: null, 
+            lastHist: null
+        };
+
+        class DataVault {
+            static init() {
+                if(!localStorage.getItem('drx_data_vault_v8')) {
+                    localStorage.setItem('drx_data_vault_v8', JSON.stringify({ 
+                        history: [], wins: 0, losses: 0, balance_peak: 0, system_logs: []
+                    }));
+                }
+            }
+            static get() { return JSON.parse(localStorage.getItem('drx_data_vault_v8')); }
+            static save(d) { localStorage.setItem('drx_data_vault_v8', JSON.stringify(d)); }
+            static addRecord(period, result, pred, isWin) {
+                let d = this.get();
+                if(!d.history.find(x => x.period === period)) {
+                    d.history.unshift({ period: period, result: parseInt(result), pred: pred, isWin: isWin });
+                    if(d.history.length > 2000) d.history.pop();
+                    if(isWin) d.wins++; else d.losses++;
+                    this.save(d);
+                }
+            }
+            static getHistoryArray() { return this.get().history.map(x => parseInt(x.result)); }
+        }
+        DataVault.init();
+
+        // ==========================================
+        // 5. LOGIC ENGINE (Normal + 5 Pattern Recovery)
+        // ==========================================
+        const UserPatternLogic = (h) => {
+            if (!h || h.length < 4) return 'NO TRADE';
+            
+            const lastNumber = h[0];
+            
+            // ===== RECOVERY MODE =====
+            if (st.isRecovery) {
+                if (st.recoverySequence.length === 0) {
+                    let seq = getMarketPattern(h.slice(0, 4));
+                    if (seq) {
+                        st.recoverySequence = seq;
+                        st.recoverySeqIdx = 0;
+                        console.log(`🔄 PATTERN FOUND → Recovery Sequence: ${seq.join(' → ')}`);
+                        return st.recoverySequence[st.recoverySeqIdx];
+                    } else {
+                        console.log(`⏳ RECOVERY: No pattern match, skipping...`);
+                        return 'NO TRADE';
+                    }
+                } else {
+                    if (st.recoverySeqIdx < st.recoverySequence.length) {
+                        let sig = st.recoverySequence[st.recoverySeqIdx];
+                        console.log(`🔄 RECOVERY STEP ${st.recoverySeqIdx+1}/${st.recoverySequence.length}: ${sig}`);
+                        return sig;
+                    } else {
+                        st.isRecovery = false;
+                        st.recoverySequence = [];
+                        st.recoverySeqIdx = 0;
+                        console.log(`⚠️ RECOVERY SEQUENCE FINISHED → NORMAL`);
+                        return 'NO TRADE';
+                    }
+                }
+            }
+            
+            // ===== NORMAL MODE =====
+            if (lastNumber >= 5) return 'BIG';
+            else if (lastNumber >= 0 && lastNumber <= 4) return 'SMALL';
+            return 'NO TRADE';
+        };
+
+        // ==========================================
+        // 6. MARTINGALE (Unlimited + Full Balance)
+        // ==========================================
+        const calcSeq = (cBal, tgtAmt) => {
+            let base = st.extVal > 0 ? st.extVal : 5;
+            if (st.currentStep === 0) st.baseAmount = base;
+            let amount = st.baseAmount * Math.pow(2, st.currentStep);
+            if (amount > cBal) {
+                amount = Math.floor(cBal);
+                if (amount < 1) amount = 0;
+            }
+            return [amount];
+        };
+
+        // ==========================================
+        // 7. UI & SCANNER (Full Stats)
+        // ==========================================
+        let dTimeLeft = 30;
+        if (PLATFORM_ID !== 'dkwin') {
+            setInterval(() => {
+                let uClk = document.getElementById('ui-clk');
+                if (uClk) {
+                    let minutes = Math.floor(dTimeLeft / 30);
+                    let seconds = dTimeLeft % 30;
+                    uClk.textContent = uF(`${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`);
+                }
+                dTimeLeft--;
+                if (dTimeLeft < 0) dTimeLeft = 30;
+            }, 1000);
+        }
+
+        let lkOvl = document.createElement('div');
+        lkOvl.id = 'drx-lck-bg';
+        lkOvl.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.01);z-index:9999997;display:none;';
+        lkOvl.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }, true);
+        document.body.appendChild(lkOvl);
+
+        function ext(tgt) {
+            let tw=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);
+            let n, arr=[];
+            while(n=tw.nextNode()){
+                let v = n.nodeValue.trim();
+                if(!v)continue;
+                let r=document.createRange();r.selectNodeContents(n);
+                let br=r.getBoundingClientRect();
+                let absX = br.left+window.scrollX; let absY = br.top+window.scrollY;
+                let m1 = !(absX>tgt.x+tgt.w || absX+br.width<tgt.x || absY>tgt.y+tgt.h || absY+br.height<tgt.y);
+                let fixX = br.left; let fixY = br.top;
+                let m2 = !(fixX>tgt.x+tgt.w || fixX+br.width<tgt.x || fixY>tgt.y+tgt.h || fixY+br.height<tgt.y);
+                if(m1 || m2) arr.push(v);
+            }
+            return arr;
+        }
+
+        function chkBal() {
+            let bText = document.body.innerText;
+            let bMatch = bText.match(/₹[\s]*([\d,]+\.\d{2})/);
+            if (bMatch) {
+                let p = parseFloat(bMatch[1].replace(/,/g, ''));
+                if (!isNaN(p)) { st.curBal = p; return st.curBal; }
+            }
+            let tb = ext(d.B1);
+            if(tb.length > 0) {
+                let p = parseFloat(tb[0].replace(/[^0-9.]/g, ''));
+                if(!isNaN(p)) st.curBal = p;
+            }
+            return st.curBal;
+        }
+
+        let p = document.createElement('div');
+        p.id = 'sys-core-fin';
+        p.style.cssText = 'position:fixed;width:230px;padding:4px;font-family:monospace;font-size:10px;z-index:9999999;color:#fff;user-select:none;border-radius:14px;overflow:visible;background:transparent;'; 
+        
+        let sL = localStorage.getItem('drx_ui_x');
+        let sT = localStorage.getItem('drx_ui_y');
+        if(sL && sT) { p.style.left = sL; p.style.top = sT; } 
+        else { p.style.top = '20px'; p.style.right = '20px'; }
+
+        let stl = document.createElement('style');
+        stl.innerHTML = `
+            @keyframes titlePulseAnim { 0% { transform: scale(1); text-shadow: 0 0 10px #a020f0; } 50% { transform: scale(1.05); text-shadow: 0 0 20px #a020f0, 0 0 30px #fff; } 100% { transform: scale(1); text-shadow: 0 0 10px #a020f0; } }
+            .drx-in { background: transparent; position:relative; z-index:1; display:flex; flex-direction:column; height:100%; border-radius:12px; border: 2px solid #000000; box-sizing: border-box; }
+            input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+            .txt-blk { color: #fff; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-accent { color: #a020f0; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-warn { color: #ffcc00; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-err { color: #f00; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-cyan { color: #0ff; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-mag { color: #f0f; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .txt-blk-reverse { color: #ff6b00; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0px 4px 5px #000; font-weight: 900; letter-spacing: 1px; }
+            .drx-elec-target { border-radius: 8px !important; position: relative; z-index: 9999 !important; transition: all 0.1s; background: rgba(0,0,0,0.5) !important; border: 2px solid #000 !important; }
+            .drx-ml-bg { display: none; opacity: 0; pointer-events: none; position: absolute; top: -9999px; left: -9999px; }
+            .drx-title-anim { display: inline-block; animation: titlePulseAnim 2s infinite ease-in-out; }
+            .custom-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 8px; margin-left: 5px; background: #ff6b00; color: #fff; font-weight: bold; }
+            .stat-win { color: #00ff88; font-weight: bold; }
+            .stat-loss { color: #ff0044; font-weight: bold; }
+            .stat-signal { color: #ffcc00; font-weight: bold; }
+            .stat-max { color: #ff6b00; font-weight: bold; }
+            .stat-super { color: #ffd700; font-weight: bold; text-shadow: 0 0 10px #ffd700; }
+        `;
+        document.head.appendChild(stl);
+
+        p.className = 'drx-wrap';
+        let inC = document.createElement('div');
+        inC.className = 'drx-in';
+        
+        let h = document.createElement('div');
+        h.style.cssText = 'padding:8px;font-size:12px;display:flex;justify-content:space-between;cursor:move;border-bottom:2px solid #000;background:transparent;';
+        h.innerHTML = `<span class="txt-blk drx-title-anim" id="drx-title">${uF('NX XHAWON')} <span class="custom-badge">5SEQ</span></span><span style="cursor:pointer;" class="txt-blk-err" id="sys-cls">X</span>`;
+        inC.appendChild(h);
+
+        let drg=false,sx,sy,sl,st_y;
+        function dSt(e){if(e.target.tagName==='SPAN')return;drg=true;let ev=e.type.includes('touch')?e.touches[0]:e;sx=ev.clientX;sy=ev.clientY;sl=p.offsetLeft;st_y=p.offsetTop;}
+        function dMv(e){if(!drg)return;e.preventDefault();let ev=e.type.includes('touch')?e.touches[0]:e;p.style.left=(sl+ev.clientX-sx)+'px';p.style.top=(st_y+ev.clientY-sy)+'px';}
+        function dEn(){drg=false; localStorage.setItem('drx_ui_x', p.style.left); localStorage.setItem('drx_ui_y', p.style.top);}
+        h.addEventListener('mousedown',dSt);h.addEventListener('touchstart',dSt,{passive:false});
+        document.addEventListener('mousemove',dMv);document.addEventListener('touchmove',dMv,{passive:false});
+        document.addEventListener('mouseup',dEn);document.addEventListener('touchend',dEn);
+
+        h.querySelector('#sys-cls').onclick = () => { clearInterval(st.autoInt); clearInterval(st.preScn); p.remove(); lkOvl.remove(); document.body.style.overflow = ''; };
+
+        let b = document.createElement('div');
+        b.style.cssText = 'padding:10px;display:flex;flex-direction:column;gap:8px;background:transparent;';
+
+        const p1 = document.createElement('div');
+        p1.innerHTML = `<div style="text-align:center;margin-bottom:8px;padding:6px;background:transparent;border-radius:6px;border:2px solid #000;"><span class="txt-blk" style="font-size:9px;color:#ccc;">${uF('CURRENT BAL')}</span><br><span id="pre-bal" class="txt-blk" style="font-size:15px;color:#fff;">--</span></div>`;
+        
+        const tgtInp = document.createElement('input');
+        tgtInp.type = 'number'; tgtInp.placeholder = 'TARGET AMT';
+        tgtInp.className = 'txt-blk';
+        tgtInp.style.cssText = 'width:100%;padding:8px;margin-bottom:8px;background:transparent;border:2px solid #000;border-radius:4px;text-align:center;font-size:12px;outline:none;';
+        
+        const mWrap = document.createElement('div');
+        mWrap.style.cssText = 'display:flex;gap:5px;margin-bottom:8px;';
+        
+        const divBtn = document.createElement('button');
+        divBtn.innerText = 'DIV';
+        divBtn.className = 'txt-blk-cyan';
+        divBtn.style.cssText = 'flex:1;padding:6px;background:transparent;border:2px solid #000;border-radius:4px;cursor:pointer;font-size:10px;';
+        
+        const dblBtn = document.createElement('button');
+        dblBtn.innerText = 'DBL';
+        dblBtn.className = 'txt-blk-mag';
+        dblBtn.style.cssText = 'flex:1;padding:6px;background:transparent;border:2px solid #000;border-radius:4px;cursor:pointer;font-size:10px;';
+        
+        mWrap.appendChild(divBtn); mWrap.appendChild(dblBtn);
+
+        const mInpWrap = document.createElement('div');
+        mInpWrap.style.cssText = 'display:none;margin-bottom:8px;';
+        const mInp = document.createElement('input');
+        mInp.type = 'number';
+        mInp.className = 'txt-blk';
+        mInp.style.cssText = 'width:100%;padding:8px;background:transparent;border:2px solid #000;border-radius:4px;text-align:center;font-size:12px;outline:none;';
+        mInpWrap.appendChild(mInp);
+
+        divBtn.onclick = () => { st.mode = 'DIV'; mInpWrap.style.display = 'block'; mInp.placeholder = 'BASE AMOUNT'; mInp.style.color = '#0ff'; dblBtn.style.opacity = '0.4'; divBtn.style.opacity = '1'; };
+        dblBtn.onclick = () => { st.mode = 'DBL'; mInpWrap.style.display = 'block'; mInp.placeholder = 'BASE AMOUNT'; mInp.style.color = '#f0f'; divBtn.style.opacity = '0.4'; dblBtn.style.opacity = '1'; };
+
+        const timeWrap = document.createElement('div');
+        timeWrap.style.cssText = 'margin-bottom:8px;';
+        const timeSel = document.createElement('select');
+        timeSel.className = 'txt-blk';
+        timeSel.style.cssText = 'width:100%;padding:8px;background:rgba(0,0,0,0.8);border:2px solid #000;border-radius:4px;text-align:center;font-size:12px;outline:none;color:#fff;appearance:none;';
+        let optHtml = ""; for(let i=1; i<=60; i++) { optHtml += `<option value="${i}">${i}</option>`; } optHtml += `<option value="NO" selected>NO</option>`; timeSel.innerHTML = optHtml;
+        timeSel.onchange = () => { st.timeLimit = timeSel.value; };
+        timeWrap.appendChild(timeSel);
+
+        const goBtn = document.createElement('button');
+        goBtn.innerText = uF('START ENGINE'); goBtn.className = 'txt-blk';
+        goBtn.style.cssText = 'width:100%;padding:8px;background:transparent;border:2px solid #000;border-radius:4px;cursor:pointer;font-size:11px;transition:0.2s;';
+        p1.appendChild(tgtInp); p1.appendChild(mWrap); p1.appendChild(mInpWrap); p1.appendChild(timeWrap); p1.appendChild(goBtn);
+        st.preScn = setInterval(() => { if(!st.isRun) { let bal = chkBal(); document.getElementById('pre-bal').innerText = uF(bal > 0 ? bal.toFixed(2) : '--'); } }, 1000);
+
+        const p2 = document.createElement('div');
+        p2.style.display = 'none';
+        const balBx = document.createElement('div');
+        balBx.style.cssText = 'padding:6px;text-align:center;background:transparent;border-radius:6px;border:2px solid #000;margin-bottom:6px;';
+        balBx.innerHTML = `<div class="txt-blk" style="font-size:9px;color:#ccc;">${uF('LIVE BAL / PROFIT')}</div><div id="ui-bal" class="txt-blk" style="font-size:16px;color:#fff;">--</div>`;
+        
+        let timerPlaceholder = PLATFORM_ID === 'deshclub' ? '--' : '00:30';
+        let aiRow = `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('AI:')}</span><span id="ui-ai" class="txt-blk-reverse">5SEQ</span></div>`;
+
+        const infBx = document.createElement('div');
+        infBx.style.cssText = 'padding:6px;font-size:10px;line-height:2;background:transparent;border-radius:6px;border:2px solid #000;';
+        infBx.innerHTML = aiRow +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('TGT:')}</span><span id="ui-tgt" class="txt-blk" style="color:#fff;">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('STP:')}</span><span id="ui-bet" class="txt-blk-warn" style="color:#ffcc00;">5</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('CLK:')}</span><span id="ui-clk" class="txt-blk" style="color:#fff;">${timerPlaceholder}</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('STEP:')}</span><span id="ui-step" class="txt-blk-warn" style="color:#ffcc00;">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('MODE:')}</span><span id="ui-mode" class="txt-blk-cyan" style="color:#0ff;">NORMAL</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('SIGNAL:')}</span><span id="ui-signal" class="txt-blk-reverse" style="color:#ff6b00;">---</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('TOTAL SIG:')}</span><span id="ui-total-sig" class="stat-signal">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('TOTAL WIN:')}</span><span id="ui-total-win" class="stat-win">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('TOTAL LOSS:')}</span><span id="ui-total-loss" class="stat-loss">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('MAX LOSS:')}</span><span id="ui-max-loss" class="stat-max">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-bottom:2px dashed #000;"><span class="txt-blk" style="color:#ccc;">${uF('MAX WIN:')}</span><span id="ui-max-win" class="stat-super">0</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;"><span class="txt-blk" style="color:#ccc;">${uF('STS:')}</span><span id="ui-sts" class="txt-blk" style="color:#fff;">${uF('WAIT')}</span></div>` +
+                            `<div style="display:flex;justify-content:space-between;border-top:2px dashed #000;margin-top:3px;padding-top:3px;"><span class="txt-blk" style="color:#ccc;">${uF('LOSS:')}</span><span id="ui-loss" class="txt-blk-warn" style="color:#ffcc00;">0</span></div>`;
+        
+        const stpBtn = document.createElement('button');
+        stpBtn.innerText = uF('STOP'); stpBtn.className = 'txt-blk-err';
+        stpBtn.style.cssText = 'width:100%;padding:8px;background:transparent;border:2px solid #000;border-radius:4px;cursor:pointer;font-size:11px;margin-top:6px;transition:0.2s;';
+
+        p2.appendChild(balBx); p2.appendChild(infBx); p2.appendChild(stpBtn); b.appendChild(p1); b.appendChild(p2); 
+        inC.appendChild(b); p.appendChild(inC); document.body.appendChild(p);
+
+        let mlBgDiv = document.createElement('div');
+        mlBgDiv.className = 'drx-ml-bg'; mlBgDiv.id = 'ml-bg-engine'; document.body.appendChild(mlBgDiv);
+
+        const exeTrd = (pred, amt, cb) => {
+            let pEl = document.querySelector(sel[pred]);
+            if(!pEl) { if(cb) cb(false); return; }
+            pEl.classList.add('drx-elec-target');
+            pEl.click(); 
+            setTimeout(() => {
+                let inpEl = document.querySelector(sel.A1);
+                if(inpEl) {
+                    inpEl.focus();
+                    let setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                    if(setV) setV.call(inpEl, amt); else inpEl.value = amt;
+                    inpEl.dispatchEvent(new Event('input', { bubbles: true })); inpEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                setTimeout(() => {
+                    let dEl = document.querySelector(sel.DTA);
+                    if(dEl) { dEl.click(); setTimeout(() => dEl.click(), 100); }
+                    if(pEl) pEl.classList.remove('drx-elec-target');
+                    setTimeout(() => { if(cb) cb(true); }, 3000);
+                }, 500);
+            }, 500);
+        };
+
+        const scnUI = (cb) => {
+            let ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:transparent;z-index:9999998;pointer-events:none;overflow:hidden;';
+            let cBase = '#a020f0';
+            if(SETTINGS.VISUAL_FX === 'RAINBOW') cBase = 'linear-gradient(90deg, red, orange, yellow, green, blue, indigo, violet)';
+            let rL = document.createElement('div'); let scanSpeed = "0.15s";
+            rL.style.cssText = `position:absolute;width:100%;height:2px;background:${cBase};box-shadow:0 0 10px 3px ${cBase};animation:sR ${scanSpeed} linear infinite alternate;`;
+            let gL = document.createElement('div'); gL.style.cssText = `position:absolute;height:100%;width:3px;background:${cBase};box-shadow:0 0 15px 5px ${cBase};animation:sG ${scanSpeed} cubic-bezier(0.25,0.1,0.25,1) infinite alternate;`;
+            let sS = document.createElement('style'); 
+            sS.innerHTML = `@keyframes sR { 0% { top: -10px; } 100% { top: 100vh; } } @keyframes sG { 0% { left: -10px; } 100% { left: 100vw; } }`;
+            document.head.appendChild(sS); ov.appendChild(rL); ov.appendChild(gL); document.body.appendChild(ov);
+            setTimeout(() => { ov.remove(); sS.remove(); if(cb) cb(); }, 1500);
+        };
+
+        const updateUI = () => {
+            const uMode = document.getElementById('ui-mode'); const uLoss = document.getElementById('ui-loss');
+            const uStep = document.getElementById('ui-step'); const uSignal = document.getElementById('ui-signal');
+            const uTotalSig = document.getElementById('ui-total-sig'); const uTotalWin = document.getElementById('ui-total-win');
+            const uTotalLoss = document.getElementById('ui-total-loss'); const uMaxLoss = document.getElementById('ui-max-loss');
+            const uMaxWin = document.getElementById('ui-max-win');
+            
+            if (uMode) {
+                if (st.isRecovery && st.recoverySequence.length === 0) {
+                    uMode.innerText = uF('REC (WAIT)');
+                    uMode.className = 'txt-blk-warn'; uMode.style.color = '#ffcc00';
+                } else if (st.isRecovery && st.recoverySequence.length > 0) {
+                    uMode.innerText = uF(`REC [${st.recoverySeqIdx + 1}/${st.recoverySequence.length}]`);
+                    uMode.className = 'txt-blk-reverse'; uMode.style.color = '#ff6b00';
+                } else {
+                    uMode.innerText = uF('NORMAL');
+                    uMode.className = 'txt-blk-cyan'; uMode.style.color = '#0ff';
+                }
+            }
+            if (uLoss) { uLoss.innerText = st.lossCount; uLoss.className = st.lossCount >= 3 ? 'txt-blk-err' : 'txt-blk-warn'; uLoss.style.color = st.lossCount >= 3 ? '#f00' : '#ffcc00'; }
+            if (uStep) { uStep.innerText = st.currentStep; uStep.className = st.currentStep >= 7 ? 'txt-blk-err' : 'txt-blk-warn'; uStep.style.color = st.currentStep >= 7 ? '#f00' : '#ffcc00'; }
+            if (uSignal) { uSignal.className = st.isRecovery ? 'txt-blk-reverse' : 'txt-blk-cyan'; uSignal.style.color = st.isRecovery ? '#ff6b00' : '#0ff'; }
+            if (uTotalSig) uTotalSig.innerText = st.totalSignals; if (uTotalWin) uTotalWin.innerText = st.totalWins;
+            if (uTotalLoss) uTotalLoss.innerText = st.totalLosses; if (uMaxLoss) uMaxLoss.innerText = st.maxLossStreak;
+            if (uMaxWin) uMaxWin.innerText = st.maxWinStreak;
+        };
+
+        const loopTask = () => {
+            if (window._checkAdminStatus()) return; 
+
+            const nw = new Date();
+            if (PLATFORM_ID === 'deshclub') {
+                let uClk = document.getElementById('ui-clk');
+                if(uClk) uClk.textContent = uF(`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`);
+            }
+
+            if(!st.isRun || st.isTrd) return;
+
+            chkBal();
+            const uBal = document.getElementById('ui-bal'), uSts = document.getElementById('ui-sts'), uBet = document.getElementById('ui-bet');
+            const uSignal = document.getElementById('ui-signal');
+            
+            if (st.curBal >= st.tgtAmt && st.curBal > 0) { uBal.innerText = uF(`${st.curBal.toFixed(2)} (Done)`); } else { uBal.innerText = uF(st.curBal > 0 ? st.curBal.toFixed(2) : '--'); }
+            uBet.innerText = uF(st.dynSeq[st.stpIdx] || '--');
+
+            updateUI();
+
+            if(st.curBal >= st.tgtAmt && st.curBal > 0) {
+                uSts.innerText = uF('DONE'); uSts.className = 'txt-blk-accent'; stpBtn.style.display = 'none';
+                st.isRun = false; clearInterval(st.autoInt); lkOvl.style.display = 'none'; document.body.style.overflow = '';
+                let dWrap = document.createElement('div');
+                dWrap.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);padding:20px;border:2px solid #a020f0;border-radius:10px;z-index:99999999;text-align:center;box-shadow:0 0 30px #a020f0;';
+                dWrap.innerHTML = `<h2 style="color:#a020f0;margin-bottom:10px;font-family:monospace;">✅ TARGET REACHED</h2><p style="color:#fff;font-family:monospace;margin-bottom:5px;">Balance: ${st.curBal.toFixed(2)}</p><button id="closeDWrap" style="background:transparent;color:#a020f0;border:1px solid #a020f0;padding:5px 15px;cursor:pointer;">OK</button>`;
+                document.body.appendChild(dWrap); document.getElementById('closeDWrap').onclick = () => dWrap.remove();
+                return;
+            }
+
+            // ==========================================
+            // HISTORY SCANNER & EVALUATION
+            // ==========================================
+            let sDigRaw = null; let pageText = document.body.innerText;
+            let histMatches = [...pageText.matchAll(/(20\d{12,18})[\s\n]+(\d)[\s\n]+(Big|Small)/gi)];
+            
+            if (histMatches.length >= 10) { sDigRaw = histMatches.map(m => parseInt(m[2])); }
+            
+            if (sDigRaw && sDigRaw.length >= 10) { 
+                let sDig = sDigRaw;
+                let cSig = sDig.slice(0, 5).join("-"), sSig = sessionStorage.getItem('drx_sig');
+                
+                if (cSig !== sSig) {
+                    if(st.lastPred && st.lastPeriod) {
+                        let actualRes = parseInt(sDig[0]);
+                        let isWin = (st.lastPred === 'BIG' && actualRes >= 5) || (st.lastPred === 'SMALL' && actualRes < 5);
+                        DataVault.addRecord(st.lastPeriod, actualRes, st.lastPred, isWin);
+                        
+                        st.totalSignals++;
+                        if (isWin) {
+                            st.totalWins++; st.currentWinStreak++; st.currentLossStreak = 0;
+                            if (st.currentWinStreak > st.maxWinStreak) st.maxWinStreak = st.currentWinStreak;
+                            st.currentStep = 0; st.stpIdx = 0; st.lossCount = 0;
+                            if (st.isRecovery) {
+                                st.isRecovery = false; st.recoverySequence = []; st.recoverySeqIdx = 0;
+                                console.log("🎉 RECOVERY WIN → NORMAL MODE");
+                            }
+                        } else {
+                            st.totalLosses++; st.currentLossStreak++; st.currentWinStreak = 0;
+                            if (st.currentLossStreak > st.maxLossStreak) st.maxLossStreak = st.currentLossStreak;
+                            st.lossCount++; st.currentStep++;
+                            
+                            if (st.isRecovery && st.recoverySequence.length > 0) {
+                                st.recoverySeqIdx++;
+                                if (st.recoverySeqIdx >= st.recoverySequence.length) {
+                                    st.recoverySequence = []; st.recoverySeqIdx = 0;
+                                    console.log("⚠️ RECOVERY SEQUENCE FAILED → Waiting for pattern again...");
+                                }
+                            }
+
+                            if (st.lossCount >= 3 && !st.isRecovery) {
+                                st.isRecovery = true; st.recoverySequence = []; st.recoverySeqIdx = 0;
+                                console.log(`⚠️ ৩টি LOSS → RECOVERY MODE চালু (Waiting for Pattern)`);
+                            }
+                        }
+                        updateUI();
+                    }
+
+                    st.lastPeriod = cSig;
+
+                    if (st.timeLimit !== 'NO' && parseInt(st.timeLimit) > 0) {
+                        if (st.tradesDone >= st.maxTrades && st.curBal < st.tgtAmt) {
+                            st.isRun = false; clearInterval(st.autoInt);
+                            uSts.innerText = uF('FAIL'); uSts.className = 'txt-blk-err'; lkOvl.style.display = 'none'; document.body.style.overflow = '';
+                            let dWrapF = document.createElement('div');
+                            dWrapF.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);padding:20px;border:2px solid #f00;border-radius:10px;z-index:99999999;text-align:center;box-shadow:0 0 30px #f00;';
+                            dWrapF.innerHTML = `<h2 style="color:#f00;margin-bottom:10px;font-family:monospace;">❌ TASK FAILED</h2><button id="closeDWrapF" style="background:transparent;color:#f00;border:1px solid #f00;padding:5px 15px;cursor:pointer;">OK</button>`;
+                            document.body.appendChild(dWrapF); document.getElementById('closeDWrapF').onclick = () => dWrapF.remove();
+                            return;
+                        }
+                    }
+
+                    st.lastHist = sDig;
+                    let prediction = UserPatternLogic(sDig);
+
+                    if (uSignal) {
+                        if (prediction !== 'NO TRADE') {
+                            uSignal.innerText = prediction; uSignal.className = st.isRecovery ? 'txt-blk-reverse' : 'txt-blk-cyan'; uSignal.style.color = st.isRecovery ? '#ff6b00' : '#0ff';
+                        } else {
+                            uSignal.innerText = st.isRecovery ? 'WAIT' : '---'; 
+                            uSignal.className = st.isRecovery ? 'txt-blk-warn' : 'txt-blk'; 
+                            uSignal.style.color = st.isRecovery ? '#ffcc00' : '#fff';
+                        }
+                    }
+
+                    if (prediction === 'NO TRADE') {
+                        uSts.innerText = st.isRecovery ? uF('PATTERN') : uF('WAIT'); 
+                        uSts.className = 'txt-blk-warn';
+                        sessionStorage.setItem('drx_sig', cSig); st.lastPred = null; st.lastPeriod = null; return;
+                    }
+
+                    st.isTrd = true; uSts.innerText = uF('CHK...'); uSts.className = 'txt-blk-warn';
+
+                    setTimeout(() => {
+                        let nBal = chkBal(); uBal.innerText = uF(nBal.toFixed(2));
+                        if(nBal >= st.tgtAmt && nBal > 0) { st.isTrd = false; return; }
+                        
+                        st.dynSeq = calcSeq(nBal, st.tgtAmt); st.stpIdx = 0;
+                        let tAmt = st.dynSeq[st.stpIdx]; uBet.innerText = uF(tAmt);
+
+                        if(nBal < tAmt) { uSts.innerText = uF('LOW'); uSts.className = 'txt-blk-err'; st.isTrd = false; return; }
+
+                        uSts.innerText = uF('EXC...'); uSts.className = 'txt-blk'; st.lastPred = prediction;
+
+                        exeTrd(prediction, tAmt, (suc) => {
+                            if(suc) {
+                                uSts.innerText = uF('OK'); uSts.className = 'txt-blk-accent';
+                                sessionStorage.setItem('drx_sig', cSig); sessionStorage.setItem('drx_p_bal', st.curBal);
+                                st.tradesDone++; 
+                            } else { uSts.innerText = uF('ERR'); uSts.className = 'txt-blk-err'; }
+                            setTimeout(() => { st.isTrd = false; }, 1000); 
+                        });
+                    }, cfg.syncDly);
+                } else if(!st.isTrd) { uSts.innerText = uF('SCAN'); uSts.className = 'txt-blk'; }
+            } else { if(!st.isTrd) { uSts.innerText = 'NO DATA'; uSts.className = 'txt-blk-err'; } }
+        };
+
+        goBtn.onclick = () => {
+            if (window._checkAdminStatus()) return;
+            let a = parseFloat(tgtInp.value); if(!a || a <= 0) return;
+            st.extVal = parseFloat(mInp.value) || 0; clearInterval(st.preScn);
+            
+            st.tradesDone = 0; st.isRecovery = false; st.lossCount = 0; st.currentStep = 0;
+            st.baseAmount = st.extVal > 0 ? st.extVal : 5;
+            st.totalSignals = 0; st.totalWins = 0; st.totalLosses = 0;
+            st.maxLossStreak = 0; st.maxWinStreak = 0; st.currentLossStreak = 0; st.currentWinStreak = 0;
+            st.recoverySequence = []; st.recoverySeqIdx = 0;
+            
+            if (st.timeLimit !== 'NO' && parseInt(st.timeLimit) > 0) { st.maxTrades = parseInt(st.timeLimit) * 2; }
+
+            scnUI(() => {
+                sessionStorage.removeItem('drx_sig'); sessionStorage.removeItem('drx_p_bal');
+                chkBal(); st.tgtAmt = a; st.dynSeq = calcSeq(st.curBal, st.tgtAmt); st.stpIdx = 0; 
+                document.getElementById('ui-tgt').innerText = uF(a);
+                
+                let pageText = document.body.innerText;
+                let hMatches = [...pageText.matchAll(/(20\d{12,18})[\s\n]+(\d)[\s\n]+(Big|Small)/gi)];
+                if (hMatches.length >= 5) {
+                    let sDig = hMatches.map(m => parseInt(m[2]));
+                    sessionStorage.setItem('drx_sig', sDig.slice(0, 5).join("-"));
+                } else { sessionStorage.setItem('drx_sig', '0-0-0-0-0'); }
+
+                p1.style.display = 'none'; p2.style.display = 'block';
+                lkOvl.style.display = 'block'; document.body.style.overflow = 'hidden';
+
+                st.isRun = true; st.isTrd = false; sessionStorage.setItem('drx_p_bal', st.curBal);
+                document.getElementById('ui-sts').innerText = uF('RDY');
+                updateUI(); st.autoInt = setInterval(loopTask, cfg.fRt); 
+            });
+        };
+
+        stpBtn.onclick = () => {
+            st.isRun = false; clearInterval(st.autoInt);
+            sessionStorage.removeItem('drx_sig'); sessionStorage.removeItem('drx_p_bal');
+            document.getElementById('ui-sts').innerText = uF('HLT'); document.getElementById('ui-sts').className = 'txt-blk-err';
+            lkOvl.style.display = 'none'; document.body.style.overflow = '';
+            
+            stpBtn.innerText = uF('RBT');
+            stpBtn.onclick = () => {
+                p2.style.display = 'none'; p1.style.display = 'block'; stpBtn.innerText = uF('STOP');
+                st.preScn = setInterval(() => { let b = chkBal(); document.getElementById('pre-bal').innerText = uF(b > 0 ? b.toFixed(2) : '--'); }, 1000);
+            };
+        };
+    });
+})();
